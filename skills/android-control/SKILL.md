@@ -49,6 +49,36 @@ description: 通过 adb 控制已连接的安卓手机（读 UI 树、按文字�
 - 滑动要足够"慢/长"：`input swipe 540 2100 540 300 500`（1400–1800px、500ms）；250ms 的快速滑动在部分 App 里会被当成 fling 而回弹
 - 只按 UI 关键词判"购物/广告"时，**不要**把导航栏词（购物、商城、团购）算进去，否则几乎每条都命中；用 `广告|立即咨询|点击进入直播间|消费券|已售|讲解中|券后|领券|立即购买|购物车|小店|下单`
 
+## 发送类操作：先核对，再发送（强制流程）
+
+凡是"发消息/发短信/发邮件/提交表单"这类**不可撤回**的动作，必须按下面的检查点走，
+任一步对不上就**停下并回到引导模式**（向用户确认目标/文案），绝不"先发了再说"。
+
+配套实现：`scripts/wechat_send.sh`（微信），退出码即检查点编号。
+
+| 顺序 | 检查点 | 判定方式 | 失败处理 |
+|---|---|---|---|
+| 0 | 是否处于**已知起点**（微信聊天列表） | OCR 截图里同时出现「通讯录」「发现」 | exit 7，不做任何操作 |
+| 1 | 搜索结果里**是否出现目标名字** | OCR 文本归一化后包含目标名 | exit 4 → 引导模式（可能不是好友 / 名字不对） |
+| 2 | 打开的聊天**标题是否就是目标** | 逐行试探结果行，每次进入后 OCR 核对标题；不对就 `keyevent 4` 退回试下一行（默认最多 5 行） | exit 3 |
+| 3 | 输入框是否可接受文本（不是"按住说话"语音模式） | OCR 找「按住说话」→ 点输入框**最左侧小键盘图标**切回文字 | exit 8 |
+| 4 | 输入框内容**是否等于原文** | OCR 归一化（去空格）后包含完整原文 | exit 5 |
+| 5 | 发送按钮是否定位成功 | 微信绿 `#07C160` 像素扫描 | exit 6 |
+
+只有 0–5 全过才点发送；发送后再存一张终验截图（并可用 OCR 复核最后一条气泡）。
+
+**两条硬规则**
+
+1. **永远不要用"第 1 行结果"直接发送**：微信搜索页第 1 行可能是聊天记录或群聊（实测搜「李小文」第 1 行打开的是另一个人「杰」的聊天）。必须先看标题。
+2. **永远不要用"命令返回 0"当成功**：`input tap` 返回 0 不代表点中了可点区域（见坑 7），`am broadcast` 返回 0 也不代表文本进了输入框（见坑 4）。判定依据只有**屏幕上的字**。
+
+## 文本注入：ADBKeyboard 优于输入法候选
+
+- 中文用 `am broadcast -a ADB_INPUT_B64 --es msg <base64>` 一次写入，**零候选、零错字**。
+- 输入法候选法（打拼音再选字）在姓名上经常失败：实测「woshi'su'hong'bo」的候选只有「我是苏红波/我是苏宏博」，
+  **没有「洪」**，整句输入法不可靠；逐字选又要点 4–6 次、每次都要截图。
+- 装 ADBKeyboard 在 HyperOS 上要过「USB 安装」确认（见坑 2），装好后全程只切一次输入法，跑完在 `trap EXIT` 里还原。
+
 ## HyperOS / MIUI 专项坑
 
 | 现象 | 正确做法 |
@@ -59,12 +89,18 @@ description: 通过 adb 控制已连接的安卓手机（读 UI 树、按文字�
 | `adb pull /sdcard/...` 在 Git Bash 里路径被改写 | `export MSYS_NO_PATHCONV=1`，或用 `C:/...` 输出路径 |
 | 亮屏但 `uiautomator dump` 只返回一个 systemui 节点 | 先 `input keyevent 224` + `wm dismiss-keyguard`，再 dump |
 | 锁屏有密码 | 无 root/Shizuku 无法自动解锁，直接告诉用户需要手动解锁 |
+| `adb install` 报 `INSTALL_FAILED_USER_RESTRICTED` | 开发者选项 → **USB 安装** 打开；且每次安装手机上会弹「继续安装（8 秒倒计时）」，必须后台跑安装 + 立刻点确认（`scripts/install_adbkeyboard.sh`） |
+| 输入框显示「按住说话」 | 处于语音模式，文本注入会被**静默丢弃**；点输入框**最左侧**小键盘图标切回文字 |
+| 微信有"分身/双开" | `ACTION_SEND` 会先弹 MIUI「请选择要使用的应用」，要选对主空间/分身 |
 
 ## 常见任务的配方
 
 **打开 App**：`action=launch pkg=com.xxx`（或 `monkey -p`）→ 等 2–6s → `action=screen` 确认 `focus=`
 **从桌面图标点开**：`screen` 找到 `text="相册"` 之类 → `tap target="相册"`
 **改系统设置**：`shell "settings put system ..."` / `cmd uimode night yes`，改完 `settings get` 回读验证
+**微信发消息（带核对）**：`scripts/wechat_send.sh -q "李小姐" -m "内容" --auto-send`
+（`--dry` 只准备不发；目视确认后 `--confirm` 只点发送。微信 UI 无可访问性节点，核对全靠 OCR）
+
 **发短信（中文）**：`am start -a android.intent.action.SENDTO -d smsto: --es sms_body '内容'` → 填收件人 → 让用户确认再发
 **取一张照片**：`content query --uri content://media/external/images/media --projection datetaken:_data --where "datetaken>=A AND datetaken<B" --sort "datetaken ASC"`（A/B 为毫秒时间戳，UTC+8）→ `adb pull`
 **查看某天照片**：同上范围查询；注意 2026 年 7–9 月这种整段空白说明那段时间确实没照片（先用前后最近项验证，而不是怀疑查询写错）

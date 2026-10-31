@@ -62,9 +62,21 @@ ADB="${PI_ANDROID_ADB:-$(adb_bin)}"
 
 # ---- pick a device ----------------------------------------------------------
 # PI_ANDROID_DEVICE wins; otherwise the first attached device.
+# Accepts an exact serial, or a model/codename substring (Wi-Fi adb changes its port on every
+# reconnect, so pinning the port in an env var breaks constantly — pin the model instead).
 device() {
-  if [ -n "${PI_ANDROID_DEVICE:-}" ]; then echo "$PI_ANDROID_DEVICE"; return; fi
-  MSYS_NO_PATHCONV=1 "$ADB" devices | awk 'NR>1 && $2=="device"{print $1; exit}'
+  local want="${PI_ANDROID_DEVICE:-}"
+  local list; list=$(MSYS_NO_PATHCONV=1 "$ADB" devices -l 2>/dev/null)
+  if [ -n "$want" ]; then
+    if echo "$list" | awk -v w="$want" 'NR>1 && $1==w {found=1} END{exit !found}'; then
+      echo "$want"; return
+    fi
+    local serial
+    serial=$(echo "$list" | awk -v w="$want" 'NR>1 && ($1 ~ w || $0 ~ ("model:" w) || $0 ~ ("device:" w)) {print $1; exit}')
+    if [ -n "$serial" ]; then echo "$serial"; return; fi
+    echo "$want"; return
+  fi
+  echo "$list" | awk 'NR>1 && $2=="device"{print $1; exit}'
 }
 
 # ---- run a command on the device, strip CR ----------------------------------

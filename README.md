@@ -91,8 +91,23 @@ PI_ANDROID_DEVICE=<serial> ./scripts/wechat_send.sh -q "阿宿" -m "我是苏洪
 ./scripts/wechat_send.sh -q asu -m "测试" --dry
 ```
 
-实测：**12.1 秒/条**（含 1 张验证截图），对比"逐步截图思考"的 ~10 分钟。
-发送按钮不是硬编码坐标，而是按微信绿 `#07C160` 做像素定位，键盘开合都能命中。
+实测：最快 **12 秒**（`--dry` 只准备）、**~58 秒**（`--auto-send` 全量 6 个核对点，含 5–6 次 OCR）。
+
+### 核对机制（发送类操作强制）
+
+`--auto-send` 会依次核对，任一不过就**不发**并返回独立退出码：
+
+| 码 | 检查点 | 判定 |
+|---|---|---|
+| 7 | 是否在微信聊天列表 | OCR 找「通讯录」「发现」 |
+| 4 | 目标名字是否出现在搜索结果 | OCR 归一化包含 |
+| 3 | 打开的聊天标题是否为目标 | 逐行试探 + 标题核对，最多 5 行 |
+| 8 | 输入框是否被切成语音模式（"按住说话"） | OCR 判定，自动点左侧小键盘切回 |
+| 5 | 输入框正文是否等于原文 | OCR 归一化比对 |
+| 6 | 发送按钮是否定位到 | 微信绿 `#07C160` 像素扫描 |
+
+发送后再存终验截图 `out/shots/wechat_sent.png`。OCR 用 Windows 自带 `Windows.Media.Ocr`
+（`scripts/ocr.ps1`，无需安装）。
 
 ## 两阶段批量流水线（省 token 的关键）
 
@@ -119,6 +134,7 @@ scripts/lib.sh                 公共函数：找 adb、选设备、wake、紧�
 scripts/phone.sh               人工/无扩展时的小工具
 scripts/wechat_send.sh         微信发消息（ADBKeyboard 精确输入 + 像素定位发送键）
 scripts/install_adbkeyboard.sh 安装/启用 ADBKeyboard（自动点掉 MIUI 的 USB 安装确认）
+scripts/ocr.ps1                Windows 自带 OCR（截图→文本），供核对机制使用
 scripts/capture.sh             阶段 1：批量采集（不识别）
 scripts/montage.sh             阶段 2：拼长图（一次识图）
 docs/install.md                安装与无线调试细节

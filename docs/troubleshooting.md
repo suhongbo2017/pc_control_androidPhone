@@ -168,3 +168,62 @@ adb shell wm dismiss-keyguard
 **原因**：命令在传给 bash 之前已经被 JSON 解码过一轮，`\\r` 变 `\r`。
 
 **解法**：改写用编辑工具（精确替换），或者把反斜杠再加倍。
+
+## 17. 微信界面没有任何可访问性节点
+
+**现象**：`uiautomator dump` 对微信返回 0 个带文字节点（连输入框都读不到），但系统分享面板
+（`com.android.intentresolver`）、设置页等**有**节点。
+
+**解法**：微信只能"截图 + 坐标"操作；所有核对改成 **OCR 截图**。Windows 自带 OCR 可直接用，
+无需安装：`scripts/ocr.ps1`（`Windows.Media.Ocr`），注意传**反斜杠绝对路径**，输出要显式设 UTF-8。
+
+## 18. HyperOS 上 `adb install` 报 INSTALL_FAILED_USER_RESTRICTED
+
+**现象**：`adb install` / `pm install` 都失败，提示 `Install canceled by user`；手机上没有可点的对话框。
+
+**原因**：MIUI 的「USB 安装」开关 + 每次安装会弹 `com.miui.securitycenter/.permcenter.install.AdbInstallActivity`
+（标题「USB 安装提示」，按钮「继续安装（8）」带 8 秒倒计时，超时自动取消 = "canceled by user"）。
+
+**解法**：后台跑安装，同时立刻点「继续安装」（`scripts/install_adbkeyboard.sh` 就是这个握手）。
+注意 `settings put global adb_install_need_confirm 0` 在这类 ROM 上**无效**。
+
+## 19. 输入法候选法打不准人名
+
+**现象**：打 `woshi'su'hong'bo`，讯飞候选是「我是苏红波 / 我是苏宏博」，**没有「洪」**；
+逐字选要点 4–6 次、每次都要截图确认。
+
+**解法**：装 ADBKeyboard，用 `am broadcast -a ADB_INPUT_B64 --es msg <base64>` 一次写入原文（CJK 全支持）。
+装好后整个流程只在开头切一次输入法，结尾用 `trap EXIT` 还原。
+
+## 20. 语音模式静默吞掉文本注入
+
+**现象**：`ADB_INPUT_B64` 广播返回成功，但输入框仍显示「按住说话」，内容没进去。
+
+**原因**：输入框处于语音模式，不接受文本注入。
+
+**解法**：点输入框**最左侧**（紧挨"按住说话"左边）的小键盘图标切回文字模式，切完再注入；
+并把"是否仍显示按住说话"作为发送前的一个检查点。
+
+## 21. 微信搜索页布局不固定，第 1 行可能是聊天记录
+
+**现象**：搜「李小文」直接点第 1 行，打开的是另一个人「杰」的聊天；搜「李小姐」时联系人行在
+y≈546，而搜「阿宿」时在 y≈621（有"最常使用"分组时整体下移）。
+
+**解法**：不要固定行坐标 —— **逐行试探 + 标题核对**：点一行 → OCR 标题 → 不含目标就 `keyevent 4`
+退回再试下一行（默认 5 行）。分组标题（"联系人"/"最常使用"）OCR 不稳定，**不要**当硬判据，
+只用"目标名字是否出现"。
+
+## 22. 微信绿色发送按钮：视觉位置 ≠ 可点区域
+
+**现象**：按截图里「发送」按钮的视觉中心 `(771, 2301)` 点击毫无反应；纵向扫描后发现命中区在
+**y≈2180**（往上约 120px）。`input tap` 和 `input motionevent` 表现一致。
+
+**解法**：不要硬编码 —— 按微信绿 `#07C160` 做**像素定位**（ffmpeg 解 raw RGB + 取中位数），
+或做纵向扫描（每 40px 试一次，用顶层 Activity 变化判断是否命中）。
+
+## 23. 无线 adb 端口每次重连都会变
+
+**现象**：`PI_ANDROID_DEVICE=192.168.102.21:38125` 突然报 `device not found`，实际端口已变成 `:44977`。
+
+**解法**：用 **codename/model**（如 `annibale`、`2510DRK44C`）做设备标识；`scripts/lib.sh` 的
+`device()` 会在 `adb devices -l` 里把 model/codename 解析成当前 serial。
