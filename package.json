@@ -1,0 +1,14 @@
+{
+  "name": "pi-android",
+  "version": "0.1.0",
+  "description": "Drive a real Android phone over adb from an AI coding agent (pi extension + skill + scripts)",
+  "keywords": ["pi", "pi-extension", "android", "adb", "automation", "agent", "uiautomator", "skill"],
+  "license": "MIT",
+  "private": true,
+  "files": ["extensions", "skills", "scripts", "docs", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:suhongbo2017/pc_control_androidPhone.git"
+  },
+  "engines": { "node": ">=20" }
+}

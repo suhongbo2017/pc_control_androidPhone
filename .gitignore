@@ -1,0 +1,15 @@
+# runtime output: screenshots, logs, TSV — may contain personal data
+out/
+shots/
+captures.tsv
+*.png
+*.jpg
+!docs/**/*.png
+
+# node / editors
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
