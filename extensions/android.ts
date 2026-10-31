@@ -18,7 +18,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -41,18 +41,48 @@ function candidateAdbPaths(): string[] {
     list.push("/usr/bin/adb", "/usr/local/bin/adb",
       path.join(homedir(), "Android/Sdk/platform-tools/adb"));
   }
-  list.push(exe); // last resort: PATH
+  // NOTE: `adb` from PATH is deliberately NOT a candidate here — see adbPath(),
+  // which tries scrcpy folders first and only then falls back to PATH.
   return list;
 }
 
 let cachedAdb: string | null = null;
+
+/** scrcpy ships its own adb and people keep it unpacked in ~/Downloads or the desktop. */
+function scrcpyAdb(): string | null {
+  const exe = process.platform === "win32" ? "adb.exe" : "adb";
+  const dirs = ["Downloads", "Desktop", ""].map((d) => (d ? path.join(homedir(), d) : homedir()));
+  dirs.push("/opt", "/usr/local");
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(dir).filter(
+        (e) => e.startsWith("scrcpy") && !/\.(zip|tar\.gz|tgz|7z|exe)$/i.test(e),
+      );
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const base = path.join(dir, e);
+      for (const candidate of [path.join(base, exe), path.join(base, e, exe)]) {
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 function adbPath(): string {
   if (cachedAdb) return cachedAdb;
   const candidates = candidateAdbPaths();
   for (const c of candidates) {
+    // bare command name (e.g. "adb") means "resolve via PATH"
     if (!c.includes(path.sep) && !c.includes("/")) return (cachedAdb = c);
     if (existsSync(c)) return (cachedAdb = c);
   }
+  const scrcpy = scrcpyAdb();
+  if (scrcpy) return (cachedAdb = scrcpy);
   return (cachedAdb = process.platform === "win32" ? "adb.exe" : "adb");
 }
 
@@ -81,6 +111,9 @@ type Device = { serial: string; model: string; device: string; transport: string
 
 async function listDevices(): Promise<Device[]> {
   const r = await run(null, ["devices", "-l"], 20_000);
+  if (!r.ok && !r.out.trim()) {
+    throw new Error(`\`${adbPath()} devices\` failed: ${r.err.trim() || "no output"}`);
+  }
   const devs: Device[] = [];
   for (const line of r.out.split(/\r?\n/).slice(1)) {
     // NOTE: `.` does not match `\r`, so trim before matching.

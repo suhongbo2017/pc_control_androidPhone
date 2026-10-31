@@ -78,7 +78,7 @@ PY
   fi
 
   p=$(psnr "$prev" "$f")
-  act=$(sh_ "dumpsys activity activities" 2>/dev/null | grep -m1 topResumedActivity | grep -o "[A-Za-z.]*Activity" | tail -1)
+  act=$(sh_ "dumpsys activity activities" 2>/dev/null | grep -m1 topResumedActivity | grep -oE "[a-zA-Z0-9._]+/[A-Za-z0-9.$]+" | head -1)
   prev="$f"
 
   if [ "$SKIP_SHOP" = "1" ] && [ "$shop" = "1" ]; then

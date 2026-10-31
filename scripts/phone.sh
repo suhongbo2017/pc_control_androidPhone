@@ -13,6 +13,7 @@
 . "$(dirname "$0")/lib.sh"
 
 cmd="${1:-help}"; shift 2>/dev/null || true
+require_adb
 
 case "$cmd" in
   devices)

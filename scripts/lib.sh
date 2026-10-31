@@ -9,18 +9,53 @@ SHOTS="${SHOTS:-$ROOT/out/shots}"
 TSV="${TSV:-$ROOT/out/captures.tsv}"
 mkdir -p "$SHOTS"
 
+export PYTHONIOENCODING=utf-8   # keep CJK in UI dumps readable
+
 # ---- locate adb (same order as the extension) --------------------------------
+exe_for_adb() { if [ "${OS:-}" = "Windows_NT" ]; then echo adb.exe; else echo adb; fi; }
+
+# scrcpy ships its own adb; people keep it unpacked in ~/Downloads or the desktop.
+scrcpy_adb() {
+  local exe s f d
+  exe=$(exe_for_adb)
+  for d in "$HOME/Downloads" "$HOME/Desktop" "$HOME" /opt /usr/local; do
+    [ -d "$d" ] || continue
+    for s in "$d"/scrcpy*/; do
+      [ -d "$s" ] || continue
+      for f in "$s$exe" "$s"*/"$exe"; do
+        [ -x "$f" ] && { echo "$f"; return; }
+      done
+    done
+  done
+}
+
 adb_bin() {
-  local exe="adb"; [ "${OS:-}" = "Windows_NT" ] && exe="adb.exe"
+  local exe c; exe=$(exe_for_adb)
   for c in "${PI_ANDROID_ADB:-}" "${ADB:-}" \
            "${ANDROID_HOME:+$ANDROID_HOME/platform-tools/$exe}" \
            "${ANDROID_SDK_ROOT:+$ANDROID_SDK_ROOT/platform-tools/$exe}" \
            "C:/Program Files/scrcpy/adb.exe" \
            "$HOME/AppData/Local/Android/Sdk/platform-tools/adb.exe" \
-           "/opt/homebrew/bin/adb" "/usr/local/bin/adb" "/usr/bin/adb" "$exe"; do
-    if [ -n "$c" ] && { [ "$c" = "$exe" ] || [ -x "$c" ]; }; then echo "$c"; return; fi
+           "/opt/homebrew/bin/adb" "/usr/local/bin/adb" "/usr/bin/adb"; do
+    if [ -n "$c" ] && [ -x "$c" ]; then echo "$c"; return; fi
   done
-  echo "$exe"
+  c=$(scrcpy_adb); [ -n "${c:-}" ] && { echo "$c"; return; }
+  echo "$exe"   # last resort: whatever is on PATH
+}
+
+# Fail loudly with actionable advice instead of "adb.exe: command not found".
+require_adb() {
+  if ! "$ADB" version >/dev/null 2>&1; then
+    cat >&2 <<EOF
+adb not found (tried: PI_ANDROID_ADB, ADB, ANDROID_HOME/ANDROID_SDK_ROOT, common install paths, scrcpy folders, PATH).
+
+Pick one:
+  1) export PI_ANDROID_ADB="/path/to/platform-tools/adb"   # or the adb shipped inside scrcpy
+  2) put platform-tools on PATH
+  3) install scrcpy or Android SDK platform-tools
+EOF
+    exit 127
+  fi
 }
 
 ADB="${PI_ANDROID_ADB:-$(adb_bin)}"
@@ -48,6 +83,10 @@ ui_dump() {
   MSYS_NO_PATHCONV=1 "$ADB" -s "$(device)" exec-out uiautomator dump --compressed /dev/tty 2>/dev/null > "$tmp"
   python - "$tmp" "${1:-}" <<'PY'
 import re, sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 xml_path, query = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "")
 xml = open(xml_path, encoding="utf-8", errors="replace").read()
 start, end = xml.find("<?xml"), xml.rfind("</hierarchy>")

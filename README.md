@@ -78,6 +78,22 @@ cp -r skills/android-control ~/.pi/agent/skills/
 ./scripts/phone.sh shot out.png
 ```
 
+## 微信发消息（一次调用 ≈12 秒）
+
+```bash
+# 需要先装 ADBKeyboard（脚本会处理小米的"继续安装"确认）
+./scripts/install_adbkeyboard.sh
+
+# 发消息：搜索词 + 正文都支持中文，正文经 ADBKeyboard 精确注入（不走输入法候选，不会错字）
+PI_ANDROID_DEVICE=<serial> ./scripts/wechat_send.sh -q "阿宿" -m "我是苏洪波"
+
+# 只填不发，用于确认目标聊天是否正确
+./scripts/wechat_send.sh -q asu -m "测试" --dry
+```
+
+实测：**12.1 秒/条**（含 1 张验证截图），对比"逐步截图思考"的 ~10 分钟。
+发送按钮不是硬编码坐标，而是按微信绿 `#07C160` 做像素定位，键盘开合都能命中。
+
 ## 两阶段批量流水线（省 token 的关键）
 
 ```bash
@@ -101,6 +117,8 @@ extensions/android.ts          pi 扩展：android 工具（唯一必需文件�
 skills/android-control/        SKILL.md：使用规范 + 已知坑
 scripts/lib.sh                 公共函数：找 adb、选设备、wake、紧凑 UI 树
 scripts/phone.sh               人工/无扩展时的小工具
+scripts/wechat_send.sh         微信发消息（ADBKeyboard 精确输入 + 像素定位发送键）
+scripts/install_adbkeyboard.sh 安装/启用 ADBKeyboard（自动点掉 MIUI 的 USB 安装确认）
 scripts/capture.sh             阶段 1：批量采集（不识别）
 scripts/montage.sh             阶段 2：拼长图（一次识图）
 docs/install.md                安装与无线调试细节
